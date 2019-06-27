@@ -1,0 +1,52 @@
+clf1 = StackedEnsembleClassifier()
+clf1.fit(X,Y)
+y_pred = clf1.predict(X_test)
+print(metrics.classification_report(Y_test, y_pred))
+accuracy = metrics.accuracy_score(Y_test, y_pred)
+print("Accuracy of Stacked Ensemble Classifier: " +  str(accuracy))
+model_valid_accuracy_comparisons["Stacked Ensemble Classifier: "] = accuracy
+
+clf2 = StackedEnsembleClassifierHoldOut()
+clf2.fit(X,Y)
+y_pred = clf2.predict(X_test)
+print(metrics.classification_report(Y_test, y_pred))
+print("Confusion Matrix")
+accuracy = metrics.accuracy_score(Y_test, y_pred)
+print("Accuracy of Stacked Ensemble HoldOut Classifier: " +  str(accuracy))
+model_valid_accuracy_comparisons["Stacked Ensemble HoldOut Classifier: "] = accuracy
+
+clf3 = StackedEnsembleClassifierKFold()
+clf3.fit(X,Y)
+y_pred = clf3.predict(X_test)
+print(metrics.classification_report(Y_test, y_pred))
+print("Confusion Matrix")
+accuracy = metrics.accuracy_score(Y_test, y_pred)
+print("Accuracy of Stacked Ensemble KFold Classifier: " +  str(accuracy))
+model_valid_accuracy_comparisons["Stacked Ensemble KFold Classifier: "] = accuracy
+
+###Accuracy of Stacked Ensemble Classifier: 0.8253
+###Accuracy of Stacked Ensemble HoldOut Classifier: 0.8284
+###Accuracy of Stacked Ensemble KFold Classifier: 0.8321
+###All the 3 models were trained on data sampled at a rate of 0.05.
+###As per the observations, Simple Stacked Ensemble classifier has the lowest accuracy, and KFold Classifier has the highest.
+
+decision_tree = tree.DecisionTreeClassifier(criterion="entropy", min_samples_split = 200)
+decision_tree = decision_tree.fit(X,Y)
+y_pred = decision_tree.predict(X_test)
+print(metrics.classification_report(Y_test, y_pred))
+accuracy = metrics.accuracy_score(Y_test, y_pred)
+print("Accuracy of Decision Tree: " +  str(accuracy))
+model_valid_accuracy_comparisons["Decision Tree Classifier"] = accuracy
+
+bagging_classifier = ensemble.BaggingClassifier(base_estimator = tree.DecisionTreeClassifier(criterion="entropy", min_samples_leaf = 50), n_estimators=10)
+bagging_classifier.fit(X,Y)
+y_pred = bagging_classifier.predict(X_test)
+print(metrics.classification_report(Y_test, y_pred))
+accuracy = metrics.accuracy_score(Y_test, y_pred)
+print("Accuracy of Bagging Classifier: " +  str(accuracy))
+model_valid_accuracy_comparisons["Bagging Classifier"] = accuracy
+
+###Accuracy of Decision Tree: 0.6915
+###Accuracy of Bagging Classifier: 0.7544
+###Accuracy value with Decision Tree is low as compared to Bagging Classifier.
+###But overal, the accuracy is very low as compared to the above created Stacked Classifiers.
