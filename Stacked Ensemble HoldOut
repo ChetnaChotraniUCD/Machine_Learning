@@ -1,0 +1,136 @@
+#StackedEnsembleHoldOut Class
+class StackedEnsembleClassifierHoldOut(BaseEstimator, ClassifierMixin):
+    def __init__(self, base_estimator_types = ["svm", "logreg", "tree"], base_estimator_duplicates = 8, stack_layer_classifier_type = "logreg"):
+        self.base_estimator_types = base_estimator_types
+        self.base_estimator_type_list = list()
+        self.base_estimator_duplicates = base_estimator_duplicates
+        self.stack_layer_classifier_type = stack_layer_classifier_type
+        
+    def fit(self, X, y):
+        X, y = check_X_y(X, y)
+        self.classes_ = unique_labels(y)
+        self.classifiers_ = list()
+        
+        for i in range(0, self.base_estimator_duplicates):
+            for t in self.base_estimator_types:
+
+                self.base_estimator_type_list.append(t)      
+                c = create_classifier(t, tree_min_samples_split=math.ceil(len(X)*0.05))
+                self.classifiers_.append(c)
+        
+        self.n_estimators_ = len(self.classifiers_)
+        
+        
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+        
+        self.X_stack_train = None #(dtype = float)
+        self.y_stack_train = y_test
+        
+        for classifier in self.classifiers_:
+
+            # Extract a bootstrap sample
+            X_train_samp, y_train_samp = resample(X_train, y_train, replace=True)    
+            
+            # Train a base classifier
+            classifier.fit(X_train_samp, y_train_samp)
+            
+            # Make predictions for all instances in the training set
+            y_pred = classifier.predict_proba(X_test)
+
+            # Append the predictions ot the stack layer traing set (a bit of hacking here!)
+            try:
+                self.X_stack_train = np.c_[self.X_stack_train, y_pred]
+            except ValueError:
+                self.X_stack_train = y_pred
+                
+        
+         ########################
+        # LEVEL 1
+        ########################
+        
+        # Create the stack layer classifier
+        self.stack_layer_classifier_ = create_classifier(self.stack_layer_classifier_type, tree_min_samples_split=math.ceil(len(X)*0.05))
+
+        # Train the stack layer using the newly created dataset
+        self.stack_layer_classifier_.fit(self.X_stack_train, self.y_stack_train)
+            
+        # Return the classifier
+        return self
+    
+    
+    def predict(self, X):
+        
+        check_is_fitted(self, ['stack_layer_classifier_'])
+        X = check_array(X)
+        X_stack_queries = None
+        
+        for classifier in self.classifiers_:
+            
+            y_pred = classifier.predict_proba(X)
+            
+            try:
+                X_stack_queries = np.c_[X_stack_queries, y_pred]
+            except ValueError:
+                X_stack_queries = y_pred
+                
+        return self.stack_layer_classifier_.predict(X_stack_queries)
+    
+    
+    
+    def predict_proba(self, X):
+        """Predict class probabilities of the input samples X.
+        Parameters
+        ----------
+        X : array-like matrix of shape = [n_samples, n_features]
+            The input samples. 
+        Returns
+        -------
+        p : array of shape = [n_samples, n_labels].
+            The predicted class label probabilities of the input samples. 
+        """
+        # Check is fit had been called by confirming that the teamplates_ dictiponary has been set up
+        check_is_fitted(self, ['stack_layer_classifier_'])
+
+        # Check that the input features match the type and shape of the training features
+        X = check_array(X)
+        
+        X_stack_queries = None
+        
+        # Make a prediction with each base classifier
+        for classifier in self.classifiers_:
+            
+            y_pred = classifier.predict_proba(X)
+                
+            try:
+                X_stack_queries = np.c_[X_stack_queries, y_pred]
+            except ValueError:
+                X_stack_queries = y_pred
+
+        # Return the prediction made by the stack layer classifier        
+        return self.stack_layer_classifier_.predict_proba(X_stack_queries)
+    #Sampling rate choosen as 0.05
+data_sampling_rate = 0.05
+
+#Dictionary created to store the accuracy values of different models
+model_valid_accuracy_comparisons = dict()
+
+#Loading the training data 
+dataset = pd.read_csv('fashion-mnist_train.csv')
+
+#Taken a sample from the dataset so everyhting runs smoothly
+dataset = dataset.sample(frac=data_sampling_rate) 
+num_classes = 10
+classes = {0: "T-shirt/top", 1:"Trouser", 2: "Pullover", 3:"Dress", 4:"Coat", 5:"Sandal", 6:"Shirt", 7:"Sneaker", 8:"Bag", 9:"Ankle boot"}
+
+#Isolate the descriptive features we are interested in
+X = dataset[dataset.columns[1:]]
+X = X/255
+Y = np.array(dataset["label"])
+
+#Loading the test data
+test_dataset = pd.read_csv('fashion-mnist_test.csv')
+
+#Isolated the descriptive features we are interested in
+X_test = test_dataset[test_dataset.columns[1:]]
+Y_test = np.array(test_dataset["label"])
+X_test = X_test/255
