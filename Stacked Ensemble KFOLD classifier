@@ -1,0 +1,129 @@
+#Design the StackedEnsembleKFold Class
+class StackedEnsembleClassifierKFold(BaseEstimator, ClassifierMixin):
+    def __init__(self, base_estimator_types = ["svm", "logreg", "tree"], base_estimator_duplicates = 8, stack_layer_classifier_type = "logreg", folds = 3):
+        self.base_estimator_types = base_estimator_types
+        self.base_estimator_type_list = list()
+        self.base_estimator_duplicates = base_estimator_duplicates
+        self.stack_layer_classifier_type = stack_layer_classifier_type
+        self.folds = folds
+        
+        
+    def fit(self, X, y):
+        X, y = check_X_y(X, y)
+        self.classes_ = unique_labels(y)
+        self.classifiers_ = list()
+        
+        for i in range(0, self.base_estimator_duplicates):
+            for t in self.base_estimator_types:
+                self.base_estimator_type_list.append(t)      
+                c = create_classifier(t, tree_min_samples_split=math.ceil(len(X)*0.05))
+                self.classifiers_.append(c)
+                
+        self.n_estimators_ = len(self.classifiers_)
+        
+        #Used Stratified KFOLD method to split the data into X_train and X_valid, folds = 3
+        kfold = StratifiedKFold(n_splits= self.folds)
+        
+        self.X_stack_train = None #(dtype = float)
+        self.y_stack_train = np.array([])
+        
+        
+        for train_index, test_index in kfold.split(X, y):
+            X_train, X_valid = X[train_index], X[test_index]
+            y_train, y_valid = y[train_index], y[test_index]
+            self.y_stack_train = np.r_[self.y_stack_train, y_valid]
+            X_stack_train_fold = None
+            
+            for classifier in self.classifiers_:
+              
+              #Extract a Bootstrap sample
+              X_train_samp, y_train_samp = resample(X_train, y_train, replace=True)
+              
+              #Train a base classifier
+              classifier.fit(X_train_samp, y_train_samp)
+            
+              # Make predictions for all instances in the training set
+              y_pred = classifier.predict_proba(X_valid)
+              try:
+                X_stack_train_fold = np.c_[X_stack_train_fold, y_pred]
+              except ValueError:
+                X_stack_train_fold = y_pred
+            
+            # Append the predictions ot the stack layer traing set
+            try:
+              self.X_stack_train = np.r_[self.X_stack_train, X_stack_train_fold]
+            except ValueError:
+              self.X_stack_train = X_stack_train_fold
+              
+        ########################
+        # LEVEL 1
+        ########################
+        
+        # Create the stack layer classifier
+        self.stack_layer_classifier_ = create_classifier(self.stack_layer_classifier_type, tree_min_samples_split=math.ceil(len(X)*0.05))
+        
+        # Train the stack layer using the newly created dataset
+        self.stack_layer_classifier_.fit(self.X_stack_train, self.y_stack_train)
+        self.classifiers_ = list()
+        for i in range(0, self.base_estimator_duplicates):
+          for t in self.base_estimator_types:
+            self.base_estimator_type_list.append(t)      
+            c = create_classifier(t, tree_min_samples_split=math.ceil(len(X)*0.05))
+            X_samp, y_samp = resample(X, y, replace=True)
+            c.fit(X_samp, y_samp )
+            self.classifiers_.append(c)
+        
+        # Return the classifier
+        return self
+    
+    def predict(self, X):
+        
+        check_is_fitted(self, ['stack_layer_classifier_'])
+        X = check_array(X)
+        X_stack_queries = None
+        
+        for classifier in self.classifiers_:
+            
+            y_pred = classifier.predict_proba(X)
+            
+            try:
+                X_stack_queries = np.c_[X_stack_queries, y_pred]
+            except ValueError:
+                X_stack_queries = y_pred
+                
+        return self.stack_layer_classifier_.predict(X_stack_queries)
+    
+    
+    
+    def predict_proba(self, X):
+        """Predict class probabilities of the input samples X.
+        Parameters
+        ----------
+        X : array-like matrix of shape = [n_samples, n_features]
+            The input samples. 
+        Returns
+        -------
+        p : array of shape = [n_samples, n_labels].
+            The predicted class label probabilities of the input samples. 
+        """
+        # Check is fit had been called by confirming that the teamplates_ dictiponary has been set up
+        check_is_fitted(self, ['stack_layer_classifier_'])
+
+        # Check that the input features match the type and shape of the training features
+        X = check_array(X)
+        
+        X_stack_queries = None
+        
+        # Make a prediction with each base classifier
+        for classifier in self.classifiers_:
+            
+            y_pred = classifier.predict_proba(X)
+                
+            try:
+                X_stack_queries = np.c_[X_stack_queries, y_pred]
+            except ValueError:
+                X_stack_queries = y_pred
+
+        # Return the prediction made by the stack layer classifier        
+        return self.stack_layer_classifier_.predict_proba(X_stack_queries)
+    
